@@ -1,0 +1,562 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<title>Dresser-Rand</title>
+		
+		<link type="text/css" rel="stylesheet" href="css/main.css"/>
+		<link type="text/css" rel="stylesheet" href="css/countdown.css" media="all">
+		
+		<script type="text/javascript" src="js/jquery-1.9.1.min.js"></script> 	
+		<script type="text/javascript" src="http://maps.googleapis.com/maps/api/js?sensor=false"></script>
+		<script type="text/javascript" src="js/gmap3.min.js"></script>
+		<script type="text/javascript" src="js/string.js"></script>
+		<script type="text/javascript" src="js/jquery.layout.min.js"></script>
+		<script type="text/javascript" src="js/jquery.responsiveiframe.js"></script> 
+		<!--script type="text/javascript" src="js/countdown.js"></script-->
+		
+		<script type="text/javascript" src="js/jquery.ui.core.js"></script>
+		<!--script type="text/javascript" src="js/jquery.ui.draggable.js"></script-->
+		
+		<!--script type="text/javascript" src="js/jquery.effects.core.js"></script-->
+		<!--script type="text/javascript" src="js/jquery.effects.slide.js"></script>
+		<script type="text/javascript" src="js/jquery.effects.scale.js"></script>
+		<script type="text/javascript" src="js/jquery.effects.drop.js"></script-->
+
+				
+		<script type="text/javascript">
+			/*
+			V0.3
+			V If only one Package per facility, expand accordion as default
+			V If only one Package per facility, disable accordion collapse
+
+			V Marker update logic, only update markers where status has changed
+			V Optimise memory management
+			V Update Active Popup		
+			V Update non-active Popups
+			
+			V0.4
+			V Marker Index for Active Alarms
+			V add region to database
+			
+			V0.4.1
+			- Notify when database cannot be reached
+			V Countdown to next refresh
+			- Manual refresh button
+			- Reset Alarm functionality
+			
+			V0.4.3
+			- removed timer countdown
+			
+			V0.4.4
+			- added:					
+				continent:				response[i].continent,
+				region_name:			response[i].region_name,
+				driver:					response[i].driver,
+				facility_type:			response[i].facility_type,
+				operator:				response[i].operator,
+				hmi_trains_served:		response[i].hmi_trains_served,
+				turbine_type:			response[i].turbine_type,
+				turbine_manufacturer:	response[i].turbine_manufacturer,
+				fuel_type:				response[i].fuel_type,
+				plc:					response[i].plc,
+				fire_and_gas:			response[i].fire_and_gas,
+				antisurge:				response[i].antisurge,								
+				vibration:				response[i].vibration,
+				io:						response[i].io,										
+				sas_dcs:				response[i].sas_dcs,
+				utc_offset:				response[i].utc_offset
+			*/		
+			
+			/* START CONFIG */
+		
+			var CNFG_OPEN_ACCORDION_IF_ONE_PACKAGE_IN_FACILITY = true;
+			var CNFG_OPEN_ACCORDIONS_AS_DEFAULT = true;
+			var CNFG_MOUSE_OUT_DELAY = 500;
+			var CNFG_ALARM_REFRESH_INTERVAL = 10000;
+						
+			/* END CONFIG */
+			
+			/* START CONSTANTS */
+			
+			var CNST_HMI_ID_FORMAT = "{0}_{1}_{2}";
+			
+			/* END CONSTANTS */
+			
+			/* START GLOBAL VARS */
+			var debugModeOn = true;
+			var popupIsOpen = true;
+			var markerIndexMap = {};
+			var activeMarkerId = null;
+			
+			var shadow = new google.maps.MarkerImage(
+				'css/images/shadow.png',
+				new google.maps.Size(59,32),
+				new google.maps.Point(0,0),
+				new google.maps.Point(14,32)
+			);
+			
+			var globalAlarmMatrix = {}; //
+			/* END GLOBAL VARS */
+			   
+			$(function () {
+				// map initialisation
+				$('#map').gmap3({
+					map:{
+						options: {
+							center:[60.7,3.5],
+							zoom: 8,
+							panControl: true,
+							overviewMapControl: false,
+							mapTypeControl: false,
+							scaleControl: false,
+							streetViewControl: false,
+							zoomControl: true,
+							maxZoom: 16,
+							minZoom: 3
+						}
+					}
+				});
+			
+				initialiseMarkers();
+
+				
+				$("#PopUp").mouseover(function() {
+					popupIsOpen = true;
+					$("#PopUp").css('display', 'block');
+				});
+			
+				$("#PopUp").mouseout(function() {
+					$('#PopUp').css('display', 'none');
+				});
+				
+				
+				setInterval(checkForChangedAlarms, CNFG_ALARM_REFRESH_INTERVAL);
+			
+			}); // end of $(function(){
+		  
+			function populateChangedAlarmmMap(facilities) {
+				
+				var changedAlarmMap = {};
+				//iterate facilities
+				for (i=0; i<facilities.length;i++) {	
+					//iterate packages in facility
+					for (u=0;u<facilities[i].data.length;u++) {
+						//build unique id for hmi in package on facility
+						var fphId = String.format(
+									CNST_HMI_ID_FORMAT, 
+									facilities[i].data[u].facility_id, 
+									facilities[i].data[u].package_id, 
+									facilities[i].data[u].hmi_id
+									);			
+						
+						//this package alarm has changed!
+						if(globalAlarmMatrix[fphId] !== facilities[i].data[u].package_alarm) {
+							//Update globalAlarmMatrix;
+							globalAlarmMatrix[fphId] = facilities[i].data[u].package_alarm;												
+							
+							//add this marker to change list
+							changedAlarmMap[fphId] = {
+								id: fphId,
+								facility_alarm: 	facilities[i].data[u].facility_alarm
+							};
+						}			
+					}
+				}
+				
+				return changedAlarmMap;
+			}
+		  
+			function checkForChangedAlarms(facilities) {
+					
+				//get latest alarm statuses
+				var facilities = getFacilitiesFromDb(false);
+				var changedAlarmMap = populateChangedAlarmmMap(facilities);
+									
+				var curFacilityId = null;
+							
+				for (var iterator in changedAlarmMap) {
+					var markerData = changedAlarmMap[iterator];
+									
+					var facilityId = markerData['id'].split('_',1);
+
+					//if the facilityId is the same as the last iteration then skip to the next one
+					if (String(facilityId) == String(curFacilityId)) {
+						continue;
+					} else {
+						curFacilityId = facilityId;
+					}
+									
+					//alert(alarm['id']);
+					var dataArray = [];	
+					
+					//loop through facilites
+					for (i=0; i<facilities.length;i++) {
+						//check if current facility is the one from the changedAlarmMap
+											
+						if (facilities[i]['id'] == facilityId) {
+							//loop though all packages in this facility
+							for (u=0;u<facilities[i].data.length;u++) {				
+								dataArray.push({
+									hmi_ip:					facilities[i].data[u].hmi_ip,
+									hmi_id:					facilities[i].data[u].hmi_id,
+									hmi_name:				facilities[i].data[u].hmi_name,
+									package_id:				facilities[i].data[u].package_id,
+									package_name:			facilities[i].data[u].package_name,
+									facility_id:			facilities[i].data[u].facility_id,	
+									facility_name:			facilities[i].data[u].facility_name,	
+									field_id:	 			facilities[i].data[u].field_id,	
+									field_name: 			facilities[i].data[u].field_name,								
+									alarm_status: 			facilities[i].data[u].alarm_status,
+									package_alarm:			facilities[i].data[u].package_alarm,
+									facility_alarm: 		facilities[i].data[u].facility_alarm,
+									continent:				facilities[i].data[u].continent,
+									region_name:			facilities[i].data[u].region_name,
+									facility_type:			facilities[i].data[u].facility_type,
+									driver:					facilities[i].data[u].driver,
+									operator:				facilities[i].data[u].operator,
+									hmi_trains_served:		facilities[i].data[u].hmi_trains_served,
+									turbine_type:			facilities[i].data[u].turbine_type,
+									turbine_manufacturer:	facilities[i].data[u].turbine_manufacturer,
+									fuel_type:				facilities[i].data[u].fuel_type,
+									plc:					facilities[i].data[u].plc,
+									fire_and_gas:			facilities[i].data[u].fire_and_gas,
+									antisurge:				facilities[i].data[u].antisurge,								
+									vibration:				facilities[i].data[u].vibration,
+									io:						facilities[i].data[u].io,										
+									sas_dcs:				facilities[i].data[u].sas_dcs,
+									utc_offset:				facilities[i].data[u].utc_offset								
+								});							
+							}
+						}				
+					}
+									
+					//at this point all data for the current facility should be gathered
+					var context = {
+						 id 	:	facilityId,
+						 data 	: 	dataArray
+					};
+					
+					updateMarker(facilityId, context);	
+
+					//check if this facility has an active popup
+					if (String(facilityId) == activeMarkerId) {
+						assemblePopupContent(context);
+					}				
+				}
+			}
+		  
+			//update an individual marker
+			function updateMarker(facilityId, markerData) {
+			
+				var marker = $('#map').gmap3({get: String(facilityId)});
+
+				if (markerIndexMap[facilityId] == null) {
+					markerIndexMap[facilityId] = marker.getZIndex();
+				}
+				
+				if (marker != null) {				
+					//get LatLng from current Marker
+					var LatLng = marker.getPosition();
+					//alert(LatLng);
+					
+					// remove the old marker
+					$('#map').gmap3({clear: String(facilityId)}); 
+					
+					//create new marker
+					$('#map').gmap3({
+						marker:{
+							latLng: LatLng,
+							id: String(facilityId),		
+							options: {
+								draggable: false ,
+								shadow: shadow,
+								icon: new google.maps.MarkerImage(
+									(markerData['data'][0]['facility_alarm'] ? "img/c_red.png" : "img/c_green.png")							
+								),
+								zIndex: (markerData['data'][0]['facility_alarm'] ? google.maps.Marker.MAX_ZINDEX + 1 : markerIndexMap[facilityId])	
+							},
+							events: {						
+								mouseover: function (marker, event, context) {						
+									setMarkerMouseOverEvent(marker, markerData);										
+								},
+								mouseout: function () {
+									setMarkerMouseOutEvent();						
+								},
+								click: function(marker, event, context){
+									setMarkerClickEvent();
+								},
+								rightclick: function(marker, event, context){
+									setMarkerRightClickEvent(marker, event, context);
+								}
+							}
+						}				
+					});
+				}
+			}
+					
+			function setMarkerMouseOverEvent(marker, context) {
+			
+				activeMarkerId = context.id;
+				assemblePopupContent(context);
+										
+				if (debugModeOn) $('#DebugActiveMarker').html(String(activeMarkerId));
+							
+				popupIsOpen = true;
+
+				var map = $('#map').gmap3('get');
+				var scale = Math.pow(2, map.getZoom());
+				var nw = new google.maps.LatLng(
+				map.getBounds().getNorthEast().lat(), map.getBounds().getSouthWest().lng());
+				var worldCoordinateNW = map.getProjection().fromLatLngToPoint(nw);
+				var worldCoordinate = map.getProjection().fromLatLngToPoint(marker.getPosition());
+				var pixelOffset = new google.maps.Point(Math.floor((worldCoordinate.x - worldCoordinateNW.x) * scale), Math.floor((worldCoordinate.y - worldCoordinateNW.y) * scale));
+				var mapposition = $("#map").position();
+				
+				$("#PopUp").css('display', 'block');
+				$("#PopUp").css('left', (pixelOffset.x + mapposition.left + 15 + 'px'));
+				$("#PopUp").css('top', (pixelOffset.y + mapposition.top - 50 + 'px'));  
+			}
+			
+			function setMarkerMouseOutEvent() {
+				popupIsOpen = false;
+				activeMarkerId = null;
+				$('#DebugActiveMarker').html(activeMarkerId);
+				var t = setTimeout("popupClose()", CNFG_MOUSE_OUT_DELAY)
+			}
+			
+			function setMarkerRightClickEvent(marker, event, context) {
+				//alert(context.id);
+				//alert(context.data['facility_alarm']);
+				alert(activeMarkerId);
+				alert(marker.getZIndex());
+			}
+			
+			function setMarkerClickEvent(marker, event, context) {
+
+			}
+				  
+			function initialiseMarkers() {
+			
+				$('#map').gmap3({
+					marker:{
+						values: getFacilitiesFromDb(true),					
+						options: {
+							//options are set in the getFacilitesFromDb function
+						},
+						events: {						
+							mouseover: function (marker, event, context) {
+								setMarkerMouseOverEvent(marker, context);										
+							},
+							mouseout: function () {
+								setMarkerMouseOutEvent();						
+							},
+							click: function(marker, event, context){
+								setMarkerClickEvent();
+							},
+							rightclick: function(marker, event, context){
+								setMarkerRightClickEvent(marker, event, context);
+							}
+						}
+					}
+				});
+			}
+					
+			function assemblePopupContent(context) {		
+				var content = "";
+				
+				for (i=0;i<context.data.length;i++) {													
+					if (i==0) { //header (facility details)
+						content += 
+							"<div class='accordionHeader'>" +						
+								"<div class='facilityStatus" + (context.data[i].facility_alarm ? " alarm" : "") + "'>" + 
+									context.data[i].facility_name + (context.data[i].facility_alarm ? " ALARM" : " OK") + 
+								"</div>" +
+							"</div>";
+					}
+					
+					content += 
+						"<div class='accordionButton" + (context.data[i].package_alarm ? " alarm" : "") + "'>" + 
+							context.data[i].package_name + " " + context.data[i].alarm_status + 
+						"</div>" + 
+						"<div class='accordionContent'>" + 
+							"<div class='left'>" + 
+								"<div class=''> " + context.data[i].facility_name + "</div>" + 
+								"<div class=''>" + context.data[i].hmi_name + "</div>" + 
+							"</div>" + 
+						"</div>" + 										
+					"</div>"
+					;
+				}			 
+/*
+				content += 	
+						"<div>" + 
+						"<div class=''> " + context.data[i].continent + "</div>" + 
+						"<div class=''> " + context.data[i].region_name + "</div>" + 
+						"<div class=''> " + context.data[i].facility_type + "</div>" + 
+						"<div class=''> " + context.data[i].driver + "</div>" + 
+						"<div class=''> " + context.data[i].operator + "</div>" + 
+						"<div class=''> " + context.data[i].hmi_trains_served + "</div>" + 
+						"<div class=''> " + context.data[i].turbine_type + "</div>" + 
+						"<div class=''> " + context.data[i].turbine_manufacturer + "</div>" + 
+						"<div class=''> " + context.data[i].fuel_type + "</div>" + 
+						"<div class=''> " + context.data[i].plc + "</div>" + 
+						"<div class=''> " + context.data[i].fire_and_gas + "</div>" + 
+						"<div class=''> " + context.data[i].antisurge + "</div>" + 							
+						"<div class=''> " + context.data[i].vibration + "</div>" + 
+						"<div class=''> " + context.data[i].io + "</div>" + 						
+						"<div class=''> " + context.data[i].sas_dcs + "</div>" + 
+						"<div class=''> " + context.data[i].utc_offset + "</div>" + 
+					"</div>";
+*/				
+				$(".accordion").html(content);
+			}
+			
+			function interpretAlarmStatus() {
+			
+			}
+			
+			function printResults(data) {
+				$('#foursquare-results').text(JSON.stringify(data));
+			
+				prettyPrint();
+			}
+			
+			function getFacilitiesFromDb(isFirstRun){		
+				var result = [];		
+				var facPkgMap = {};	//this map holds the number of packages per facility 			
+				var facAlarmMap = {};	//this map holds the facilities alarm status based on its packages alarms 
+										
+				$.ajaxSetup({
+					async: false //force JSON call to be asynchronous
+				});				
+				
+				$.getJSON('sql/get_installations.php', function(response){					
+				//$.getJSON('http://localhost:81/gmap/map/sql/get_installations.php', function(response){					
+							
+						for(i=0; i < response.length; i++) {
+							//if new facility then add new key and value 1, if old facility then increment value on that key							
+							facPkgMap[response[i].facility_id] = (facPkgMap[response[i].facility_id] == null ? 1 : facPkgMap[response[i].facility_id] + 1)
+							
+							//new facility, default to no alarm
+							if(facAlarmMap[response[i].facility_id] == null) facAlarmMap[response[i].facility_id] = false;
+								
+							//if one of the facilities' packages has an alarm then set facility alarm to true
+							if (getAlarmFromStatus(response[i].alarm_status)) facAlarmMap[response[i].facility_id] = true;							
+						}
+						
+						var curFac;
+						var pkgInFacCount = 0;
+						var pkgDataArray = [];
+						
+						for(i=0; i<response.length; i++){
+
+							if (curFac != response[i].facility_id) {
+								curFac = response[i].facility_id;
+								pkgInFacCount = 1;
+							} else {
+								pkgInFacCount++;
+							};			
+
+							pkgDataArray.push({							
+										hmi_ip:					response[i].hmi_ip,
+										hmi_id:					response[i].hmi_id,
+										hmi_name:				response[i].hmi_name,
+										package_id:				response[i].package_id,
+										package_name:			response[i].package_name,
+										facility_id:			response[i].facility_id,	
+										facility_name:			response[i].facility_name,	
+										field_id:	 			response[i].field_id,	
+										field_name: 			response[i].field_name,								
+										alarm_status: 			response[i].alarm_status,
+										package_alarm:			getAlarmFromStatus(response[i].alarm_status),
+										facility_alarm: 		facAlarmMap[response[i].facility_id],
+										continent:				response[i].continent,
+										region_name:			response[i].region_name,
+										facility_type:			response[i].facility_type,
+										driver:					response[i].driver,
+										operator:				response[i].operator,
+										hmi_trains_served:		response[i].hmi_trains_served,
+										turbine_type:			response[i].turbine_type,
+										turbine_manufacturer:	response[i].turbine_manufacturer,
+										fuel_type:				response[i].fuel_type,
+										plc:					response[i].plc,
+										fire_and_gas:			response[i].fire_and_gas,
+										antisurge:				response[i].antisurge,								
+										vibration:				response[i].vibration,
+										io:						response[i].io,										
+										sas_dcs:				response[i].sas_dcs,
+										utc_offset:				response[i].utc_offset
+										/*
+										*/
+									});
+													
+							if (pkgInFacCount == facPkgMap[response[i].facility_id]) {	//last package in facility, push data							
+
+								//commit all facility data
+								result.push({
+									latLng: new google.maps.LatLng(response[i].geolat,response[i].geolng),	
+									id: response[i].facility_id,						
+									data: pkgDataArray,
+									options:{			
+										icon: new google.maps.MarkerImage(
+											(facAlarmMap[response[i].facility_id] ? "img/c_red.png" : "img/c_green.png")							
+										),
+										draggable: false ,
+										shadow: shadow,
+										zIndex: parseInt(response[i].facility_id)
+									}
+								});
+																						
+								//reset package data
+								pkgDataArray = [];													
+							};					
+						};					
+					}
+				);
+				return result;
+			}
+			
+			function getAlarmFromStatus (status) {
+				return (status == 'OK' ? false : true);
+			}
+
+			function popupClose() {
+				if (!popupIsOpen) {
+					$('#PopUp').css('display', 'none');
+					popupIsOpen = true;	
+				}
+			}		
+		</script>
+				
+		<script type="text/javascript">
+		
+			var myLayout; // a var is required because this page utilizes: myLayout.allowOverflow() method
+			
+			$(document).ready(function(){
+				myLayout = $('body').layout({
+					
+					applyDefaultStyles: true			
+				});	
+								
+			});
+		</script>				
+	</head>
+	<body>		
+		<div class="ui-layout-center">				
+			<div id="PopUp">
+			  <div class="arrow"></div>
+			  <div class="Wrapper">
+				<div class="top"></div>
+				<div class="content">
+				  <div class="container">
+					<div class="accordion"></div>
+				  </div>
+				</div>
+			  </div>
+			</div>
+		
+			<div id="map" class="map"></div>
+		</div>				
+	</body>
+</html>
