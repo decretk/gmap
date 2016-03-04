@@ -1,0 +1,61 @@
+.countdown {
+	width:200px;
+	margin:0 auto;
+	background-image: url("../img/maingbg.png");
+	height:100%;
+}
+
+.bgLayer { 
+    position:relative; 
+}
+
+.topLayer { 
+    position:absolute; 
+    background-image:url(../img/top.png); 
+	background-size:120px 120px;
+    width:120px;
+    height:120px;
+    background-repeat:no-repeat;
+}
+
+.text { 
+	position:absolute; 
+	top:0px; 
+	left:10px; 
+	width:120px;  
+	height:120px;}
+
+.val {
+    font-family:"Trebuchet MS", Arial, Helvetica, sans-serif;
+    font-size:47px;
+    font-weight:bold;
+    color:#FFF;
+    text-align:center;
+    line-height:50px;
+    margin-top:15px;
+    width:100px;
+}
+
+.type_minutes {
+    font-family:"Trebuchet MS", Arial, Helvetica, sans-serif;
+    color:#9cdb7d;
+    width:100px;
+    text-align:center;
+    font-size:13px;
+    line-height:20px;
+    font-weight:bold;
+    text-transform:uppercase;   
+	margin-top:15px;
+}
+
+.type_seconds {
+    font-family:"Trebuchet MS", Arial, Helvetica, sans-serif;
+    color:#ffdc50;
+    width:100px;
+    text-align:center;
+    font-size:13px;
+    line-height:20px;
+    font-weight:bold;
+    text-transform:uppercase;
+    margin-top:15px;
+}

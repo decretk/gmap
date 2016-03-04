@@ -1,0 +1,124 @@
+html, body {
+	_height: 100%;
+}
+body {
+	margin: 0px;
+	padding: 0px;
+	_color: #362721;
+	font-family: Tahoma;
+	font-size: 13px;
+	_background-color: #fff;
+}
+.map {
+	border: 1px dashed #C0C0C0;
+    height: 100%;
+    width: 100%;
+}
+#PopUp {
+	width: 295px;
+	padding-left:27px;
+	position: absolute;
+	z-index:9999;
+	display:none;
+}
+#PopUp .Wrapper {
+	/*width: 398px;*/
+	position:absolute;
+	z-index:9;
+	display:table;
+}
+#PopUp .arrow {
+	position:absolute;
+	background:url(../img/infowindow_arrow.png) no-repeat;
+	width:27px;
+	height:40px;
+	margin-top:10px;
+	margin-left:-14px;
+	z-index:10;
+}
+#PopUp .Wrapper .top {
+	background:url(../img/infowindow_top.png) no-repeat;
+	width: 398px;
+	height: 20px;
+}
+#PopUp .Wrapper .content {
+	background:url(../img/infowindow_content.png) no-repeat left bottom;
+	/*width: 398px;*/
+	z-index: 9999;
+	color: #666;
+	padding-left:18px;
+	padding-bottom:20px;
+}
+#PopUp .Wrapper .content .container {
+	/*width: 355px;*/
+	/*min-height:120px;*/
+	/*max-height:350px;*/
+	overflow:auto;
+}
+#PopUp .Wrapper .content .container .left {
+	width: 225px;
+	float: left;
+	border-right: 1px dotted #999;
+	display:table;
+	min-height:160px;
+}
+#PopUp .Wrapper .content .container .right {
+	width: 100px;
+	float: left;
+	padding-left: 10px;
+	font: 16px;
+	font-weight: bold;
+}
+#PopUp .Wrapper .content .container .right .urunlogo {
+	margin-top: 5px;
+	cursor:pointer;
+}
+#Debug {
+	padding-left:27px;
+	position: absolute;
+	z-index:9999;
+}
+
+.accordionButton {
+	font-weight:bold;
+	width: 320px;
+	margin-right:20px;
+	float: left;
+	_float: none;  
+	border-bottom: 1px dotted #333;
+	cursor: pointer;
+	height:20px;
+	padding-bottom:5px;
+	padding-top:5px;
+}
+
+.accordionContent {
+	clear:both;
+	padding-top:10px;
+}
+.on {
+	font-weight:bold;
+	cursor:pointer;
+	/*color:#900;*/
+}
+.over {
+	font-weight:bold;
+}
+.mapCluster {
+	cursor:pointer !important;
+}
+.accordionHeader {
+	border-bottom: 1px dotted #333333;
+	font-weight:bold;
+	font-size: 14px;
+}
+.facilityStatus {
+	font-weight:bold;
+}
+.packageStatus_ALARM {
+	color:#FF0000;
+}
+.alarm {
+	color:#FF0000;
+}
+
